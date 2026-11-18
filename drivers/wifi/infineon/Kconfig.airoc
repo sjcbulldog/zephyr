@@ -1,279 +1,221 @@
-# Copyright (c) 2023 Cypress Semiconductor Corporation (an Infineon company) or
-# an affiliate of Cypress Semiconductor Corporation
+# Copyright (c) 2025
 # SPDX-License-Identifier: Apache-2.0
 
+# Native Infineon AIROC Wi-Fi driver. It is sourced from drivers/wifi/Kconfig
+# and enabled automatically when a board has an SDIO "infineon,airoc-wifi" node.
+
 menuconfig WIFI_AIROC
-	bool "Infineon AIROC SoC Wi-Fi support"
+	bool "Infineon AIROC Wi-Fi support"
 	depends on DT_HAS_INFINEON_AIROC_WIFI_ENABLED
+	depends on $(dt_compat_on_bus,$(DT_COMPAT_INFINEON_AIROC_WIFI),sd) || \
+		   $(dt_compat_on_bus,$(DT_COMPAT_INFINEON_AIROC_WIFI),spi)
 	default y
-	select THREAD_CUSTOM_DATA
 	select NET_L2_ETHERNET
 	select NET_L2_WIFI_MGMT
-	select GPIO
 	select WIFI_USE_NATIVE_NETWORKING
-	select USE_INFINEON_ABSTRACTION_RTOS
+	select NET_L2_ETHERNET_EXTRA_TX_PKT_HEADROOM
+	select GPIO
+	select EVENTS
 	help
-	  Enable Infineon AIROC SoC Wi-Fi support.
+	  Native Zephyr driver for Infineon AIROC Wi-Fi 5 and Wi-Fi 6
+	  devices on SDIO (zero-copy) or gSPI. The device is chosen with the
+	  AIROC_PART and module choices below (CYW43438 and CYW43022 are not
+	  supported).
 
 if WIFI_AIROC
 
-config AIROC_WIFI_BUS_SDIO
-	bool
-	default y
-	depends on $(dt_compat_on_bus,$(DT_COMPAT_INFINEON_AIROC_WIFI),sd)
+config WIFI_AIROC_BUS_SDIO
+	def_bool $(dt_compat_on_bus,$(DT_COMPAT_INFINEON_AIROC_WIFI),sd)
 	select SDHC
 	select SDIO_STACK
-	help
-	  Enable SDIO bus support.
 
-config AIROC_WIFI_BUS_SPI
-	bool
-	default y
-	depends on $(dt_compat_on_bus,$(DT_COMPAT_INFINEON_AIROC_WIFI),spi)
+config WIFI_AIROC_BUS_SPI
+	def_bool $(dt_compat_on_bus,$(DT_COMPAT_INFINEON_AIROC_WIFI),spi)
 	select SPI
-	help
-	  Enable SPI bus support
 
-config AIROC_WIFI6
-	bool
-
-config AIROC_WIFI_EVENT_TASK_STACK_SIZE
-	int "Event Task Stack Size"
+config WIFI_AIROC_THREAD_STACK_SIZE
+	int "Driver thread stack size"
 	default 4096
-
-config AIROC_WIFI_EVENT_TASK_PRIO
-	int "Event Task Priority"
-	default 4
-
-config AIROC_WLAN_MFG_FIRMWARE
-	bool "WLAN Manufacturing Firmware"
 	help
-	  Enable WLAN Manufacturing Firmware.
+	  Stack of the single driver thread that services SDIO interrupts,
+	  receives frames and transmits queued packets.
 
-config WHD_WIFI_COUNTRY
-	string "Wifi country option"
-	default "WHD_COUNTRY_UNITED_STATES" if CYW55572 || CYW55500
-	default "WHD_COUNTRY_AUSTRALIA"
+config WIFI_AIROC_THREAD_PRIORITY
+	int "Driver thread priority"
+	default 5
 	help
-	  Sets the country, this will operate in for wifi initialization
-	  parameters. See the wifi-host-driver's whd_country_code_t for legal options.
+	  Cooperative priority of the driver thread.
 
-config WHD_DISABLE_SDIO_PULLUP_DURING_SPI_SLEEP
-	bool "Disable SDIO pullups during SPI sleep"
+config WIFI_AIROC_TX_QUEUE_DEPTH
+	int "Packets queued per access category"
+	default 16
+	range 2 128
 	help
-	  Clears SDIO pullups when the SPI bus is configured for sleep.
-	  By default, this option is set to n, so SDIO pullups will be enabled.
+	  Maximum packets waiting for firmware credit in each of the four
+	  access-category queues. Excess packets are dropped with a counter.
 
-config IFX_WIFI_SOFTAP_SUPPORT
-	bool
+config WIFI_AIROC_RX_BUF_SIZE
+	int "Maximum receive frame size in bytes"
+	default 1664
+	range 1600 8192
 	help
-	  Enable WiFi SoftAP support in the driver
+	  Largest SDPCM frame accepted. Must cover SDPCM + BDC headers, an
+	  Ethernet frame, plus bus alignment padding. Larger frames are
+	  discarded and counted.
 
-config AIROC_WIFI_CUSTOM
-	bool "Custom CYW43xx device/module"
+config WIFI_AIROC_IOCTL_TIMEOUT_MS
+	int "Control (ioctl/iovar) timeout"
+	default 5000
+
+config WIFI_AIROC_JOIN_TIMEOUT_MS
+	int "Association timeout"
+	default 9000
+
+config WIFI_AIROC_AP
+	bool "Soft AP mode (untested on hardware)"
+
+config WIFI_AIROC_WPA3_SAE
+	bool "WPA3-SAE (firmware-resident supplicant)"
+	default y
+
+module = WIFI_AIROC
+module-str = AIROC Wi-Fi
+source "subsys/logging/Kconfig.template.log_config"
+
+# ---- Device selection -------------------------------------------------------
+# The board names the connectivity device with the same AIROC_PART and module
+# choices used by the Bluetooth driver, so one board setting drives both.
+# CMakeLists.txt maps the selection to the firmware, CLM and NVRAM files and
+# links only those into the image.
+
+config WIFI_AIROC_CUSTOM_BLOBS
+	bool "Custom device/module blobs"
 	help
-	  Select Custom CYW43xx device/module. For this option,
-	  user must to provide path to FW, CLM and NVRAM for
-	  custom or vendor CYW43xx modules.
+	  Supply your own firmware, CLM and NVRAM instead of the ones selected
+	  by the AIROC part and module. Set the three paths below.
 
-choice  AIROC_PART
+if WIFI_AIROC_CUSTOM_BLOBS
+
+config WIFI_AIROC_CUSTOM_FW_PATH
+	string "Path to firmware image"
+
+config WIFI_AIROC_CUSTOM_CLM_PATH
+	string "Path to CLM blob"
+
+config WIFI_AIROC_CUSTOM_NVRAM_PATH
+	string "Path to NVRAM text file"
+
+endif # WIFI_AIROC_CUSTOM_BLOBS
+
+config WIFI_AIROC_MFG_FIRMWARE
+	bool "Manufacturing-test firmware"
+	depends on !WIFI_AIROC_CUSTOM_BLOBS
+	help
+	  Link the manufacturing-test firmware and CLM instead of the production
+	  images. Never enable this for normal use.
+
+config WIFI_AIROC_CHIP_ID
+	int
+	default 43430 if CYW4343W
+	default 43439 if CYW43439
+	default 43012 if CYW43012
+	default 17267 if CYW4373
+	default 55500 if CYW55500
+	default 55560 if CYW55572
+	default 0
+	help
+	  Chip ID the selected part reports. The boot code refuses to download
+	  firmware when the detected chip differs. 0 disables the check (custom
+	  blobs).
+
+choice AIROC_PART
 	prompt "Select AIROC part"
-	depends on !AIROC_WIFI_CUSTOM
+	depends on !WIFI_AIROC_CUSTOM_BLOBS
 
 config CYW4343W
 	bool "CYW4343W"
-	help
-	  Enable Infineon AIROC CYW4343W Wi-Fi connectivity,
-	  More information about CYW4343W device you can find on
-	  https://www.infineon.com/cms/en/product/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/cyw4343w/
 
 config CYW4373
 	bool "CYW4373"
-	help
-	  Enable Infineon AIROC CYW4373 Wi-Fi connectivity,
-	  More information about CYW4373 device you can find on
-	  https://www.infineon.com/cms/en/product/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/cyw4373/
 
 config CYW43012
 	bool "CYW43012"
-	help
-	  Enable Infineon AIROC CYW43012 Wi-Fi connectivity,
-	  More information about CYW43012 device you can find on
-	  https://www.infineon.com/cms/en/product/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/cyw43012/
-
-config CYW43022
-	bool "CYW43022"
-	help
-	  Enable Infineon AIROC CYW43022 Wi-Fi connectivity,
-	  More information about CYW43022 device you can find on
-	  https://www.infineon.com/cms/en/product/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/wi-fi-5-802.11ac/cyw43022/
-
-config CYW43438
-	bool "CYW43438"
-	help
-	  Enable Infineon AIROC CYW43438 Wi-Fi connectivity,
-	  More information about CYW43438 device you can find on
-	  https://www.infineon.com/cms/en/product/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/cyw43438/
 
 config CYW43439
 	bool "CYW43439"
-	help
-	  Enable Infineon AIROC CYW43439 Wi-Fi connectivity,
-	  More information about CYW43439 device you can find on
-	  https://www.infineon.com/cms/en/product/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/cyw43439/
 
 config CYW55500
 	bool "CYW55500"
-	select AIROC_WIFI6 if WIFI
-	help
-	  Enable Infineon AIROC CYW55500 Wi-Fi connectivity,
-	  More information about CYW55500 device you can find on
-	  https://www.infineon.com/cms/en/product/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/wi-fi-6-6e-802.11ax/cyw55511/
 
 config CYW55572
 	bool "CYW55572"
-	select AIROC_WIFI6
-	help
-	  Enable Infineon AIROC CYW55572 Wi-Fi connectivity,
-	  More information about CYW55572 device you can find on
-	  https://www.infineon.com/cms/en/product/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/wi-fi-6-6e-802.11ax/cyw55572/
 
 endchoice
 
 choice CYW43012_MODULE
 	prompt "Select CYW43012 module"
-	depends on CYW43012 && !AIROC_WIFI_CUSTOM
+	depends on CYW43012 && !WIFI_AIROC_CUSTOM_BLOBS
 
 config CYW43012_MURATA_1LV
 	bool "MURATA-1LV"
-	help
-	  Murata Type 1LV module based on Infineon CYW43012 combo chipset
-	  which supports Wi-Fi® 802.11a/b/g/n + Bluetooth® 5.0 BR/EDR/LE
-	  up to 72.2Mbps PHY data rate on Wi-fi® and 3Mbps PHY data rate
-	  on Bluetooth®. 2Mbps LE PHY is also supported.
-
-	  Detailed information about Murata Type 1LV module you can find on
-	  https://www.murata.com/en-us/products/connectivitymodule/wi-fi-bluetooth/overview/lineup/type1lv
-endchoice
-
-choice CYW43022_MODULE
-	prompt "Select CYW43022 module"
-	depends on CYW43022 && !AIROC_WIFI_CUSTOM
-
-config CYW43022CUB
-	bool "CYW43022CUB"
-	help
-	  Infineon CYW43022CUB M2 module
-
-	  Detailed information about CYW43022CUB module you can find on
-	  https://www.infineon.com/cms/en/product/wireless-connectivity/airoc-wi-fi-plus-bluetooth-combos/wi-fi-5-802.11ac/cyw43022/
 endchoice
 
 choice CYW4343W_MODULE
 	prompt "Select CYW4343W module"
-	depends on CYW4343W && !AIROC_WIFI_CUSTOM
+	depends on CYW4343W && !WIFI_AIROC_CUSTOM_BLOBS
 
 config CYW4343W_MURATA_1DX
 	bool "MURATA-1DX"
-	help
-	  Murata Type 1DX modules based on Infineon CYW4343W combo chipset
-	  which supports Wi-Fi® 802.11b/g/n + Bluetooth® 5.1 BR/EDR/LE
-	  up to 65Mbps PHY data rate on Wi-fi® and 3Mbps PHY data rate
-	  on Bluetooth®.
-
-	  Detailed information about Type 1DX module you can find on
-	  https://www.murata.com/en-us/products/connectivitymodule/wi-fi-bluetooth/overview/lineup/type1dx
 endchoice
 
 choice CYW4373_MODULE
 	prompt "Select CYW4373 module"
-	depends on CYW4373 && !AIROC_WIFI_CUSTOM
-
+	depends on CYW4373 && !WIFI_AIROC_CUSTOM_BLOBS
 
 config CYW4373_MURATA_2AE
 	bool "CYW4373_MURATA_2AE"
-	help
-	  Murata Type 2AE modules based on Infineon CYW4373 combo chipset
-
-	  Detailed information about Murata Type 2AE module you can find on
-	  https://www.murata.com/en-us/products/connectivitymodule/wi-fi-bluetooth/overview/lineup/type2ae
 
 config CYW4373_MURATA_2BC
 	bool "CYW4373_MURATA_2BC"
-	help
-	  Murata Type 2BC modules based on Infineon CYW4373 combo chipset
-
-	  Detailed information about Murata Type 2BC module you can find on
-	  https://www.murata.com/en-us/products/connectivitymodule/wi-fi-bluetooth/overview/lineup/type2bc
 
 config CYW4373_STERLING_LWB5PLUS
 	bool "STERLING-LWB5plus"
-	help
-	  Ezurio Sterling LWB5+ 802.11ac / Bluetooth 5.0 M.2 Carrier Board
-	  (E-Type Key w/ SDIO/UART)
-
-	  Detailed information about Sterling LWB5+ module you can find on
-	  https://www.ezurio.com/wireless-modules/wifi-modules-bluetooth/sterling-lwb5-plus-wifi-5-bluetooth-5-module
 endchoice
 
 choice CYW43439_MODULE
 	prompt "Select CYW43439 module"
-	depends on CYW43439 && !AIROC_WIFI_CUSTOM
+	depends on CYW43439 && !WIFI_AIROC_CUSTOM_BLOBS
 
 config CYW43439_MURATA_1YN
 	bool "MURATA_1YN"
-	help
-	  Murata Type 1YN module based on Infineon CYW43439 combo chipset
-	  which supports Wi-Fi® 802.11b/g/n + Bluetooth® 5.2 BR/EDR/LE
-	  up to 65Mbps PHY data rate on Wi-fi® and 3Mbps PHY data rate on
-	  Bluetooth®.
-
-	  Detailed information about Murata Type 1YN module you can find on
-	  https://www.murata.com/en-us/products/connectivitymodule/wi-fi-bluetooth/overview/lineup/type1yn
 
 config CYW43439_STERLING_LWBPLUS
 	bool "STERLING-LWBplus"
-	help
-	  Ezurio Sterling-LWB+ WiFi 4 with Bluetooth 5.2 module
-	  Detailed information about this module you can find on
-	  https://www.ezurio.com/wireless-modules/wifi-modules-bluetooth/sterling-lwb-wifi-4-and-bluetooth-52-modules
-
 endchoice
 
 choice CYW55500_MODULE
 	prompt "Select CYW55500 module"
-	depends on CYW55500 && !AIROC_WIFI_CUSTOM
+	depends on CYW55500 && !WIFI_AIROC_CUSTOM_BLOBS
 
 config CYW955513SDM2WLIPA_SM
 	bool "CYW955513SDM2WLIPA_SM"
-	help
-	  Infineon CYW955513SDM2WLIPA (SM) module
 
 config CYW55513IUBG_SM
 	bool "CYW55513IUBG_SM"
-	help
-	  Infineon CYW55513IUBG (SM) module
 
 config CYW55513_MURATA_2FY_SM
 	bool "CYW55513 MURATA-2FY (SM)"
-	help
-	  Infineon CYW55513 in Murata LBEE5HY2FY (Type 2FY) module (SM)
 
 config CYW55513_MOD_PSE84_SOM
 	bool "CYW55513_MOD_PSE84_SOM"
-	help
-	  Infineon CYW55513_MOD_PSE84_SOM (SM) module
-
 endchoice
 
 choice CYW55572_MODULE
 	prompt "Select CYW55572 module"
-	depends on CYW55572 && !AIROC_WIFI_CUSTOM
+	depends on CYW55572 && !WIFI_AIROC_CUSTOM_BLOBS
 
 config CYW955573M2IPA1_SM
 	bool "CYW955573M2IPA1_SM"
-	help
-	  Infineon CYW955573M2IPA1 (SM) module
 endchoice
 
-endif # AIROC_WIFI
+endif # WIFI_AIROC

@@ -29,6 +29,12 @@ properties:
       AIROC Wi-Fi device indicating that the host requires attention.
     type: phandle-array
 
+  country-code:
+    type: string
+    description: |
+      Two-letter ISO 3166-1 alpha-2 regulatory country code
+      (e.g. "US") applied to the AIROC Wi-Fi device after boot.
+
 examples:
   - |
     &sdhc0 {

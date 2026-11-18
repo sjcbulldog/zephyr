@@ -132,10 +132,9 @@ if(CONFIG_SOC_DIE_PSC3M6)
   add_subdirectory(mtb-template-psc3m6)
 endif()
 
-## Add Wi-Fi assets for AIROC devices
+## Add Wi-Fi assets for AIROC devices. The single-chip driver only consumes the
+## firmware, CLM and NVRAM files and does not use the WHD sources.
 if(CONFIG_WIFI_AIROC)
-  add_subdirectory(whd-expansion)
-
   if(NOT CONFIG_SOC_FAMILY_INFINEON_CAT1
   AND NOT CONFIG_SOC_FAMILY_PSOC6_LEGACY
   AND NOT CONFIG_SOC_FAMILY_INFINEON_EDGE)

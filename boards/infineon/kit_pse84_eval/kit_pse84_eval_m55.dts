@@ -125,8 +125,9 @@ uart4: &scb4 {
 	status = "okay";
 
 	/* Wi-Fi configuration */
-	airoc-wifi {
+	wifi: wifi {
 		compatible = "infineon,airoc-wifi";
+		country-code = "US";
 
 		/* Wi-Fi control gpios */
 		wifi-reg-on-gpios = <&gpio_prt11 6 GPIO_ACTIVE_HIGH>;
